@@ -1,0 +1,42 @@
+# events format
+# Each architecture has a list of event-name : code pairs
+events:
+  cascadelake/skylake:
+    refs: "0300"
+    cycles: "003c"
+    insts: "00c0"
+    l1imiss: "e424"
+    l1dmiss: "0151"
+    l1dhit: "01d1"
+    l2miss: "1ff1"
+    l3miss: "20d1"
+    ocr_ev1: "01b7,3f840007f7"
+    ocr_ev3: "01b7,3fB80007f7"
+
+  icelake:
+    refs: "0300"
+    cycles: "003c"
+    insts: "00c0"
+    l1imiss: "e424"
+    l1dmiss: "0151"
+    l1dhit: "01d1"
+    l2miss: "1ff1"
+    l3miss: "20d1"
+    ocr_ev1: "01b7,104000477"
+    ocr_ev2: "01b7,84002380"
+    ocr_ev3: "01b7,730000477"
+    ocr_ev4: "01b7,90002380"
+
+  sapphirerapid:
+    refs: "0300"
+    cycles: "003c"
+    insts: "00c0"
+    l1imiss: "e424"
+    l1dmiss: "0151"
+    l1dhit: "01d1"
+    l2miss: "1f25"
+    l3miss: "20d1"
+    ocr_ev1: "01b7,104004477"
+    ocr_ev2: "01b7,84002380"
+    ocr_ev3: "01b7,730007477"
+    ocr_ev4: "01b7,90002380"
