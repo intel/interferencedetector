@@ -23,14 +23,14 @@ except (ModuleNotFoundError, ImportError):
     print(
         "BCC modules (BPF, Perf, & PerfType) are not installed. Did you compile and build BCC from the source? https://github.com/iovisor/bcc/blob/master/INSTALL.md#source"
     )
-    sys.exit()
+    sys.exit(1)
 
 userid = os.geteuid()
 if userid != 0:
     print(
         "Root privileges are needed to run this script.\nPlease try again using 'sudo'. Exiting."
     )
-    sys.exit()
+    sys.exit(1)
 
 parser = argparse.ArgumentParser(
     description="eBPF based Core metrics by PID",
@@ -40,10 +40,9 @@ parser.add_argument(
     "-f",
     "--sample_freq",
     type=int,
-    default=1000000,
+    default=10000000,
     help="Sample one in this many number of events",
 )
-parser.add_argument("-p", "--pid", type=int, default=-1, help="PID")
 parser.add_argument("-d", "--duration", type=int, help="duration")
 parser.add_argument("-i", "--interval", type=int, default=1, help="interval in seconds")
 parser.add_argument(
@@ -595,7 +594,7 @@ try:
     b = BPF(text=bpf_text)
 except Exception as e:
     print("Failed to load bpf program.", e)
-    sys.exit()
+    sys.exit(1)
 
 
 def create_group_and_attach(events_list, gname, sample_freq):
@@ -616,9 +615,7 @@ def create_group_and_attach(events_list, gname, sample_freq):
                 attr._bp_addr_union.config1 = int(config1, 16)
             if count == 1:
                 attr.disabled = 1
-                b.attach_perf_event_raw(
-                    attr=attr, fn_name=fn_name, pid=args.pid, cpu=-1
-                )
+                b.attach_perf_event_raw(attr=attr, fn_name=fn_name, pid=-1, cpu=-1)
                 leader = b.open_perf_events[(attr.type, attr.config)]
             else:
                 attr.disabled = 0
@@ -626,17 +623,18 @@ def create_group_and_attach(events_list, gname, sample_freq):
                     b.attach_perf_event_raw(
                         attr=attr,
                         fn_name=fn_name,
-                        pid=args.pid,
+                        pid=-1,
                         cpu=c,
                         group_fd=leader[c],
                     )
     except Exception as e:
         print(
-            "Failed to attach to events in " + gname + ". Is this a virtual machine?",
+            "**Warning**: Failed to attach to events in "
+            + gname
+            + ". Is this a virtual machine?",
             e,
-            "Exiting...",
+            " -> Skipping...",
         )
-        sys.exit("Failed to attach to events")
 
     if args.verbose:
         print("Events in " + gname + " created and attached successfully")
@@ -659,7 +657,7 @@ fd, g_s = create_group_and_attach(
         (events[current_arch]["l1dmiss"], "on_l1dmiss", ""),
         (events[current_arch]["l1dhit"], "on_l1dhit", ""),
     ],
-    "group1",
+    "L1_cache_group",
     args.sample_freq,
 )
 
@@ -678,7 +676,7 @@ fd, g_s = create_group_and_attach(
         (events[current_arch]["l2miss"], "on_l2miss", ""),
         (events[current_arch]["l3miss"], "on_l3miss", ""),
     ],
-    "group2",
+    "L2_L3_cache_group",
     args.sample_freq,
 )
 
@@ -688,32 +686,32 @@ fo_s.append(os.fdopen(fd_id, "rb", encoding=None))
 group_sizes.append(g_s)
 
 if OCR_support:
-    OCR_L1 = [
+    OCR_Local = [
         (events[current_arch]["refs"], "on_ref", ""),
         (events[current_arch]["cycles"], "on_cycles", ""),
         (events[current_arch]["insts"], "on_insts", ""),
     ]
 
-    OCR_L2 = OCR_L1.copy()
+    OCR_Remote = OCR_Local.copy()
 
     if "ocr_ev1" in events[current_arch]:
         event_config_pair = events[current_arch]["ocr_ev1"].split(",")
-        OCR_L1.append((event_config_pair[0], "on_ocr_ev1", event_config_pair[1]))
+        OCR_Local.append((event_config_pair[0], "on_ocr_ev1", event_config_pair[1]))
 
     if "ocr_ev2" in events[current_arch]:
         event_config_pair = events[current_arch]["ocr_ev2"].split(",")
-        OCR_L1.append((event_config_pair[0], "on_ocr_ev2", event_config_pair[1]))
+        OCR_Local.append((event_config_pair[0], "on_ocr_ev2", event_config_pair[1]))
 
     if "ocr_ev3" in events[current_arch]:
         event_config_pair = events[current_arch]["ocr_ev3"].split(",")
-        OCR_L2.append((event_config_pair[0], "on_ocr_ev3", event_config_pair[1]))
+        OCR_Remote.append((event_config_pair[0], "on_ocr_ev3", event_config_pair[1]))
 
     if "ocr_ev4" in events[current_arch]:
         event_config_pair = events[current_arch]["ocr_ev4"].split(",")
-        OCR_L2.append((event_config_pair[0], "on_ocr_ev4", event_config_pair[1]))
+        OCR_Remote.append((event_config_pair[0], "on_ocr_ev4", event_config_pair[1]))
 
     # Attach OCR_L1 events
-    fd, g_s = create_group_and_attach(OCR_L1, "group3", args.sample_freq)
+    fd, g_s = create_group_and_attach(OCR_Local, "ocr_local_group", args.sample_freq)
 
     fd_id = fd[0]
     # Open fd and add file object to file objects list
@@ -721,7 +719,7 @@ if OCR_support:
     group_sizes.append(g_s)
 
     # Attach OCR_L2 events
-    fd, g_s = create_group_and_attach(OCR_L2, "group4", args.sample_freq)
+    fd, g_s = create_group_and_attach(OCR_Remote, "ocr_remote_group", args.sample_freq)
 
     fd_id = fd[0]
     # Open fd and add file object to file objects list
@@ -733,8 +731,8 @@ if OCR_support:
 
 # Collect events counters
 def group1_collect(ebpf_counters):
-    # Calcuate scale factor
-    # We extract the scale factor from group 0, we assume the scale factor is identical accross groups
+    # Calculate scale factor
+    # We extract the scale factor from group 0, we assume the scale factor is identical across groups
     scale = 1
     if len(fo_s) > 0 and len(group_sizes) > 0:
         group_size = group_sizes[0]
@@ -871,7 +869,7 @@ def group1_collect(ebpf_counters):
     qlat_accum = 0
     # *** Notice that we scale the counters to account for multiplixing: https://perf.wiki.kernel.org/index.php/Tutorial#multiplexing_and_scaling_events (see multiplexing and scaling events section)
     # *** We don't scale ref, cycles, or insts as they are counted in all groups
-    # *** We also don't scale disk or netowrk counters as they are counted in kernel tracepoints (no multiplixing)
+    # *** We also don't scale disk or network counters as they are counted in kernel tracepoints (no multiplixing)
     for k, v in global_dict["insts_count"].items():
         if "insts_count" in global_dict:
             inst = global_dict["insts_count"].get(k, 0)
@@ -897,13 +895,21 @@ def group1_collect(ebpf_counters):
             if "ocr_ev4_count" in global_dict:
                 ocr_ev4 = global_dict["ocr_ev4_count"].get(k, 0)
             if "disk_io_R_count" in global_dict:
-                disk_reads = global_dict["disk_io_R_count"].get(k, 0)
+                disk_reads = (
+                    global_dict["disk_io_R_count"].get(k, 0) / 1000000
+                )  # MB/sec
             if "disk_io_W_count" in global_dict:
-                disk_writes = global_dict["disk_io_W_count"].get(k, 0)
+                disk_writes = (
+                    global_dict["disk_io_W_count"].get(k, 0) / 1000000
+                )  # MB/sec
             if "ipv4_send_bytes" in global_dict:
-                network_TX = global_dict["ipv4_send_bytes"].get(k, 0)
+                network_TX = (
+                    global_dict["ipv4_send_bytes"].get(k, 0) / 1000000
+                )  # MB/sec
             if "ipv4_recv_bytes" in global_dict:
-                network_RX = global_dict["ipv4_recv_bytes"].get(k, 0)
+                network_RX = (
+                    global_dict["ipv4_recv_bytes"].get(k, 0) / 1000000
+                )  # MB/sec
             if "qlen_sum" in global_dict:
                 qlen_sum = global_dict["qlen_sum"].get(k, 0)
             if "qlen_count" in global_dict:
@@ -917,8 +923,8 @@ def group1_collect(ebpf_counters):
             l1d_hit_ratio = min(1, l1d_hit / (l1d_miss + l1d_hit + 1))
             l2_miss_ratio = min(1, l2_miss / (l1d_miss + 1))
             l3_miss_ratio = min(1, l3_miss / (l2_miss + 1))
-            local_bw = (ocr_ev1 + ocr_ev2) * 64 / 1000000
-            remote_bw = (ocr_ev3 + ocr_ev4) * 64 / 1000000
+            local_bw = (ocr_ev1 + ocr_ev2) * 64 / 1000000  # MB/sec
+            remote_bw = (ocr_ev3 + ocr_ev4) * 64 / 1000000  # MB/sec
 
             if qlen_count == 0:
                 qlen_avg = 0
@@ -967,9 +973,7 @@ def group1_collect(ebpf_counters):
 
 
 # Function below is not needed when items_lookup_and_delete_batch() is used, since it reads the items and clears the content in one syscall
-def clear_ebpf_counters(ebpf_counters):
-    for ebpf_c in ebpf_counters:
-        b[ebpf_c].clear()
+def clear_nonbatch_counters():
     b["start_runq"].clear()
 
 
@@ -1011,7 +1015,7 @@ while 1:
         print(
             "---------------------------------------------------------------------------------"
         )
-        clear_ebpf_counters(ebpf_counters)
+        clear_nonbatch_counters()
     except KeyboardInterrupt:
         exiting = 1
         signal.signal(signal.SIGINT, lambda signal, frame: print())

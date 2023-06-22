@@ -302,6 +302,8 @@ def get_procmon_out(
                 # clear Process data
                 process_data_dict = {}
 
+            elif line.startswith("**Warning**"):
+                print(line)
             else:
                 dataVals = line.split(",")
                 if process_PID_index < len(dataVals):
@@ -322,7 +324,7 @@ def get_process_to_container_mapping(container_to_PID_dict, lock):
             t0 = time.time()
 
             p = subprocess.Popen(
-                ["sudo", "ps", "-e", "-o", "pgid,cgroup"],
+                ["sudo", "ps", "-e", "-o", "pid,cgroup"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
@@ -391,7 +393,7 @@ def get_args():
     parser.add_argument(
         "--collect_signatures",
         action="store_true",
-        help="collect signatures of running containers and dump to: signatures.json",
+        help="collect signatures of running containers and dump to: signatures_*.csv",
     )
 
     parser.add_argument(
