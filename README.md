@@ -2,11 +2,11 @@
 
 ## Introduction
 
-Workload Interference Detector is a tool that leverages the Intel PMU to monitor and detect interference between workloads. Traditional PMU drivers that work in counting mode (i.e. emon, perf-stat) provide system level analysis with very little overhead. However, these drivers lack the ability to breakdown the system level metrics (CPI, cache misses, etc) at a process or application level. With ebpf, it is possible to associate the process context with the HW counter data, providing the ability to breakdown PMU metrics by process at a system level. Additionally, since ebpf runs filters in the kernel and uses perf in counting mode, this incurs very little overhead, allowing for real-time performance tracking.
+Workload Interference Detector is a tool that leverages the Intel Performance Monitoring Units (PMU) to monitor and detect interference between workloads. Traditional PMU drivers that work in counting mode (i.e., emon, perf-stat) provide system level analysis with very little overhead. However, these drivers lack the ability to breakdown the system level metrics (CPI, cache misses, etc) at a process or application level. With eBPF, it is possible to associate the process context with the HW counter data, providing the ability to breakdown PMU metrics by process at a system level. Additionally, since eBPF runs filters in the kernel and uses perf in counting mode, this incurs very little overhead, allowing for real-time performance tracking.
 
 ## Contents:
 
-*_procmon_*: Dumps performance metrics per process in counting mode through ebpf functionality using perf interface.
+*_procmon_*: Dumps performance metrics per process in counting mode through eBPF functionality using perf interface.
 
 *_dockermon_*: Shows the same performance metrics but on the container level (i.e. a single record for each container-core, or a single record for each container). It also has the option to export data to cloudwatch. Please check cloudwatch pricing: https://aws.amazon.com/cloudwatch/pricing/ 
 
