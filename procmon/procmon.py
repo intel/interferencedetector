@@ -761,10 +761,8 @@ def group1_collect(ebpf_counters):
         if ebpf_counters[i] not in global_dict:
             global_dict[ebpf_counters[i]] = {}
 
-        # Both items_lookup_batch() and items_lookup_and_delete_batch() require Kernel v5.6
-        # Future work: check kernel and try using "table.pop()" for kernels < v5.6
         if args.acc:
-            for k, per_cpu_array in b[ebpf_counters[i]].items_lookup_batch():
+            for k, per_cpu_array in b[ebpf_counters[i]].items():
                 for cpu_id, value in enumerate(per_cpu_array):
                     if ebpf_counters[i] in [
                         "l1dmiss_count",
@@ -781,7 +779,7 @@ def group1_collect(ebpf_counters):
                         (k.pid, k.name, cpu_id, k.cgroupid)
                     ] = value
         else:
-            for k, per_cpu_array in b[ebpf_counters[i]].items_lookup_and_delete_batch():
+            for k, per_cpu_array in b[ebpf_counters[i]].items():
                 for cpu_id, value in enumerate(per_cpu_array):
                     if ebpf_counters[i] in [
                         "l1dmiss_count",
@@ -797,7 +795,7 @@ def group1_collect(ebpf_counters):
                     global_dict[ebpf_counters[i]][
                         (k.pid, k.name, cpu_id, k.cgroupid)
                     ] = value
-
+            b[ebpf_counters[i]].clear()
     if args.verbose:
         print("CYCLES:", len(global_dict["cycles_count"]), global_dict["cycles_count"])
         print(
