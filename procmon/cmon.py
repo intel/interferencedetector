@@ -72,7 +72,7 @@ def get_procmon_out(
 
             elif "------------" in line:
                 seconds_counter += 1
-                # print dockermon output
+                # print cmon output
                 sys.stdout.flush()
                 # waiting for lock on container_to_PID_dict
                 lock.acquire()
@@ -324,20 +324,13 @@ def get_process_to_container_mapping(container_to_PID_dict, lock):
             t0 = time.time()
 
             p = subprocess.Popen(
-                ["sudo", "ps", "-e", "-o", "pid,cgroup"],
+                ["ps", "-a", "-x", "-o", "pid,cgroup"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
-            p2 = subprocess.Popen(
-                ["grep", "docker-"],
-                stdin=p.stdout,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            p.stdout.close()
 
             try:
-                out, _err = p2.communicate()
+                out, _err = p.communicate()
             except SubprocessError as e:
                 print("Failed to get process to container mapping.", e)
                 print("Exiting...")
@@ -347,12 +340,24 @@ def get_process_to_container_mapping(container_to_PID_dict, lock):
             diff = t1 - t0
             if args.verbose:
                 print("Sudo ps and grep Latency: ", str(round(diff, 2)), " seconds")
-            out_lines = out.decode("utf-8").split("\n")
+
+            out_lines = [
+                *set(
+                    filter(  # remove extraneous lines
+                        lambda x: x != ""
+                        and "CGROUP" not in x
+                        and x != "-"
+                        and ("docker" in x or "containerd" in x or "crio-" in x)
+                        and x.endswith(".scope"),
+                        out.decode("utf-8").split("\n"),
+                    )
+                )
+            ]
 
             for line in out_lines:
                 parts = line.strip().split(" ")
                 if len(parts) > 1:
-                    cont_short_name = parts[1].split("docker-")[1][0:12]
+                    cont_short_name = parts[1].split("/")[-1]
                     local_container_to_PID_dict[parts[0]] = cont_short_name
 
             t1 = time.time()
@@ -376,13 +381,13 @@ def get_process_to_container_mapping(container_to_PID_dict, lock):
                 print("Total API Calls Latency: ", str(round(diff, 2)), " seconds")
             # return cont_pids,cont_names
         except KeyboardInterrupt:
-            print("Exiting docker thread")
+            print("Exiting cid thread")
             return
 
 
 def get_args():
     parser = argparse.ArgumentParser(
-        description="Display procmon data on docker container level",
+        description="Display procmon data on container level",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -492,7 +497,7 @@ def save_signatures_to_CSV(container_to_signature_dict):
         sys.exit()
     timestr = time.strftime("%Y-%m-%d_%H-%M-%S")
     current_directory = os.getcwd()
-    folder_name = "dockermon_" + timestr
+    folder_name = "cmon_" + timestr
     output_directory = os.path.join(current_directory, folder_name)
     if os.path.exists(output_directory):
         print(
@@ -582,33 +587,33 @@ if __name__ == "__main__":
                     args.cloudwatch_sampling_duration_in_sec,
                 ),
             )
-        docker = Process(
+        container = Process(
             target=get_process_to_container_mapping, args=(container_to_PID_dict, lock)
         )
 
         procmon.start()
-        docker.start()
+        container.start()
 
-        while procmon.is_alive() and docker.is_alive():
+        while procmon.is_alive() and container.is_alive():
             sleep(2)
 
-        # If procmon or docker processes are not alive, terminate
+        # If procmon or container processes are not alive, terminate
         procmon.terminate()
-        docker.terminate()
+        container.terminate()
 
         procmon.join()
-        docker.join()
+        container.join()
 
-        global procmon_exit, docker_exit
+        global procmon_exit, container_exit
         procmon_exit = False
-        docker_exit = False
+        container_exit = False
 
     except (KeyboardInterrupt, Exception) as e:
         print("Exiting Main Thread", e)
         if procmon:
             procmon.terminate()
-        if docker:
-            docker.terminate()
+        if container:
+            container.terminate()
 
     if args.collect_signatures and container_to_signature_dict is not None:
         save_signatures_to_CSV(container_to_signature_dict)
